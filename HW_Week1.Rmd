@@ -1,0 +1,294 @@
+---
+title: "Homework_Week_1"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+Question 2.1: Describe a situation or problem from your job, everyday life, current events, etc., for which a classification model would be appropriate. List some (up to 5) predictors that you might use.
+
+
+
+Based on some of the common things I do at work (research lab) one classification problem
+we encounter is predicting deleterious effects of chemical compound concentrations on cell viability.
+
+To classify if a given ligand concentration has a negative effect on cell health we can use the following predictors as clues:
+
+1) Cell morphology: we can measure cell size and granularity (complexity)
+
+2) Duplication rate : the rate at which cells divide and proliferate under these 
+different ligand concentrations
+
+3) Nuclear Fragmentation: Cell damage is correlated with increased nuclear 
+fragmentation
+
+4) Reactive Oxygen Species: ROS within cells can indicate oxidative stress
+(we use fluorescent dye's to measure this)
+
+5) Cellular energy : We can monitor cellular ATP levels as a marker for cellular
+health (low ATP = energy deficiency)
+
+
+Question 2.2
+
+1. Using the support vector machine function ksvm contained in the R package kernlab, find a good classifier for this data. Show the equation of your classifier, and how well it classifies the data points in the full data set. (Don’t worry about test/validation data yet; we’ll cover that topic soon.)
+```{r}
+#install packages
+install.packages("kernlab")
+install.packages("kknn")
+install.packages("caret")
+
+```
+
+```{r}
+library(kknn)
+library(kernlab)
+library(caret)
+library(ggplot2)
+```
+
+
+```{r}
+# Import dataset and check the top
+data <- read.csv(file = "credit+approval/credit_card_data-headers.txt", header = TRUE, sep = "")
+head(data)
+
+```
+
+```{r}
+#build SVM model
+model <- ksvm(as.matrix(data[,1:10]),as.factor(data[,11]),type= "C-svc",kernel= 'vanilladot' ,C= 5,scaled=TRUE) 
+model #check out SVM model parameters
+```
+
+```{r}
+# calculate a1...am
+a <- colSums(model@xmatrix[[1]] * model@coef[[1]])
+a
+```
+
+
+```{r}
+# calculate a0
+a0 <- -(model@b)
+a0
+```
+
+
+```{r}
+# see what the model predicts 
+pred <- predict(model,data[,1:10]) 
+pred
+```
+
+```{r}
+# see what fraction of the model’s predictions match the actual classification
+           sum(pred == data[,11]) / nrow(data)
+```
+
+Solution:
+
+Show the equation of your classifier:
+                                            
+-0.0009059129 - 0.0009822588 - 0.0016646387 + 0.0025578654 + 1.0052684085 - 0.0025973024 -0.0002203001 - 0.0003290890 - 0.0012589283 + 0.1064307652 = 0
+
+how well it classifies the data points in the full data set
+
+Accuracy of model : 0.8639144
+
+Training error : 0.136086
+
+Question 2.2.3
+
+3. Using the k-nearest-neighbors classification function kknn contained in the R kknn package, suggest a good value of k, and show how well it classifies that data points in the full data set. Don’t forget to scale the data (scale=TRUE in kknn).
+
+```{r}
+#checking if column 11 is a factor
+is.factor(data$R1)
+```
+
+```{r}
+#split the data into training and test sets for knn using caret's createDataPartition function
+
+set.seed(100) #for reproducible results
+
+data$R1 <- factor(data$R1, levels = c(0, 1)) #make sure the R1 or response column is a factor with two levels 0,1
+
+trainIndex <- createDataPartition(data$R1, 
+								  times=1, 
+								  p = .7,    # 70% of the data will be for training, remaining 30% will be for test
+								  list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+```
+
+
+```{r}
+
+# K values to be tested 1 to 100
+Kvalues <- 1:100
+
+#Data frame to store the k and accuracy values
+results <- data.frame(k = integer (), accuracy = numeric())
+
+# loop to find the best K value and accuracy 
+
+for (k in Kvalues) {
+  model <- kknn(R1~., trainData,testData, k = k, scale =TRUE, kernel = "rectangular") #keep kernel a simple fraction
+  
+  predicted <- predict(model)
+  
+  accuracy <- sum(predicted == testData$R1)/ nrow(testData)
+  
+  print(paste("K is ", k, "With an accuracy of", accuracy))
+  
+  results <- rbind(results,data.frame(k = k, accuracy = accuracy)) #save results as a data frame
+  
+}
+plot(results,type = "b")
+
+```
+```{r}
+#grab the best K value with the highest accuracy from results
+
+best_k <- results[which.max(results$accuracy),]
+print(best_k)
+```
+
+```{r}
+#KNN Model training using k=33
+dataKNN <- kknn(R1~.,trainData,testData, k = 33, scale = TRUE, kernel = "rectangular" )
+
+k10_predictions <- predict(dataKNN)
+
+accuracy <- sum(k10_predictions == testData$R1)/ nrow(testData)
+
+print(accuracy)
+```
+
+Question 3.1
+Using the same data set (credit_card_data.txt or credit_card_data-headers.txt) as in Question 2.2, use the ksvm or kknn function to find a good classifier:
+(a) using cross-validation(do this for the k-nearest-neighbors model;SVM is optional);and
+(b) splitting the data into training,validation,and test datasets(pick either KNN or SVM;the other
+is optional).
+
+Part A: using cross-validation(do this for the k-nearest-neighbors model;SVM is optional)
+
+
+Step 1: train KNN model using cross-validation (caret library)
+```{r}
+#set up parameters for train function
+
+train_control <- trainControl(method = "cv", number = 10) #cross-validation method, using 10-fold                                                              number of evaluations Sokol lecture 3.4
+
+tune_Grid <- expand.grid(kmax = 1:100, distance = 2, kernel = "rectangular") #kernel set to rectangular for simple fraction , k max value for finding optimal k for KNN was 1-->100, euclidian distance of 2
+
+
+##### Train (caret function) KNN model using cross-validation (CV)
+set.seed(100)
+knn_model_CV <- train(R1~., data = trainData,
+                      method = "kknn",
+                      preProcess = c("center","scale"), #scale the data
+                      trControl = train_control, #10-fold CV
+                      tuneGrid = tune_Grid) #hyperparameters
+
+print(knn_model_CV) 
+plot(knn_model_CV, plotType = "line", auto.key = TRUE)
+
+```
+
+
+Step 2: Test best picked KNN model using cross-validation (caret library) on test dataset
+```{r}
+
+#### Testing CV model on test dataset
+
+knn_model_CV_predict <- predict(knn_model_CV, testData)
+accuracy_model_CV <- sum(knn_model_CV_predict == testData$R1)/ nrow(testData)
+
+print(paste(" model accuracy on test data is", accuracy_model_CV))
+
+```
+
+
+Part B:  splitting the data into training,validation,and test datasets (pick either KNN or SVM;the other is optional).
+
+
+Step 1: Split data into 3, training set, validation set and test set
+```{r}
+#split the data into training and test sets for knn using caret's createDataPartition function
+
+set.seed(100) #for reproducible results
+
+
+trainIndex <- createDataPartition(data$R1, 
+								  times=1, 
+								  p = .7,    # 70% of the data will be for training, remaining 30% will be leftover data
+								  list = FALSE)
+trainDataPartB <- data[trainIndex, ]
+leftoverDataPartB <- data[-trainIndex, ] #this 'leftover' data will be split 50;50 into validation and test sets
+
+validationIndex <- createDataPartition(leftoverDataPartB$R1, p = 0.5, list = FALSE)
+validation_data <- leftoverDataPartB[validationIndex,]
+test_dataPartB <- leftoverDataPartB[-validationIndex,]
+
+
+
+```
+
+
+Step 2: Train a knn model using the training set and testing it on the validation set to get the best k value
+```{r}
+
+
+###### Train KNN model on training data with a loop going over diff k's
+
+set.seed(100)
+
+k_valuesPartB <- 1:100
+resultsPartB <- data.frame(k = integer (), accuracy = numeric())
+
+for (k in k_valuesPartB){
+  modelPartB <- kknn(R1~., train = trainDataPartB, test = validation_data, k = k, distance = 2, kernel = "rectangular", scale = TRUE)
+  predictPartB <- predict(modelPartB)
+  accuracyPartB <- sum(predictPartB == validation_data$R1)/ nrow(validation_data)
+  
+   print(paste("K is ", k, "With an accuracy of", accuracyPartB))
+  
+  resultsPartB <- rbind(resultsPartB,data.frame(k = k, accuracy = accuracyPartB))
+  
+
+}
+plot(resultsPartB,type = "b")
+```
+Continuation of Step 2: Obtaining best k value (k=5) (accuracy obtained 89%)
+```{r}
+#### Best model selection for Part B
+
+best_k_model_PartB <- resultsPartB[which.max(resultsPartB$accuracy),]
+print(best_k_model_PartB)
+
+
+```
+
+Step 3 test k=5 (best model) on Test dataset
+```{r}
+#### Test best k (k=5) obtained from validation data and test on test dataset 
+
+k5_model_PartB <- kknn(R1~., train = trainDataPartB, test = test_dataPartB, k = 5, distance = 2,
+                         kernel = "rectangular", scale = TRUE)
+
+k5_predictions <- predict(k5_model_PartB)
+
+
+accuracy_PartB<- sum(k5_predictions == test_dataPartB$R1)/ nrow(test_dataPartB)
+
+print(accuracy_PartB)
+```
+
+Final accuracy prediction is 0.8350515
+
+
+

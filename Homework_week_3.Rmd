@@ -1,0 +1,233 @@
+---
+title: "Homework Week 3"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Question 7.1
+Describe a situation or problem from your job, everyday life, current events, etc., for which exponential smoothing would be appropriate. What data would you need? Would you expect the value of α (the first smoothing parameter) to be closer to 0 or 1, and why?
+
+#### Answer
+
+One example of using exponential smoothing in my job (research lab) is to determine if we can predict or forecast the number of bacterial colonies that will grow based on previous data/trends.
+
+The data needed would be tracking the growth of bacterial colonies over time.  We can quantitate the number of bacerial colonies observed each day for a week. With this dataset we can then use exponential smoothing to predict the number of bacterial colonies for the next day (day 8).  The alpha value would depend on the data. If, for example, the growth rate of the bacterial colonies is pretty stable over time, then we can use a low alpha value (closer to zero). An alpha value that is closer to zero weighs more heavily (relies more heavily) on past observations. If the data is highly variable, for example the bacetrial colony growth rate is susceptible to nutrient availability in the growth media; Then we would use an alpha value that is closer to one. Alpha values that are closer to one rely or weigh more heavily on the most recent datapoint.  
+
+
+### Question 7.2
+Using the 20 years of daily high temperature data for Atlanta (July through October) from Question 6.2 (file temps.txt), build and use an exponential smoothing model to help make a judgment of whether the unofficial end of summer has gotten later over the 20 years. (Part of the point of this assignment is for you to think about how you might use exponential smoothing to answer this question. Feel free to combine it with other models if you’d like to. There’s certainly more than one reasonable approach.)
+Note: in R, you can use either HoltWinters (simpler to use) or the smooth package’s es function (hardertouse,butmoregeneral). Ifyouusees,theHolt-Wintersmodelusesmodel=”AAM”inthe function call (the first and second constants are used “A”dditively, and the third (seasonality) is used “M”ultiplicatively; the documentation doesn’t make that clear).
+
+#### Answer
+
+We are going to load ,transform and tidy the data to make sure our year column headers and day column are all in one new column called Date. Once this is done we can generate a time series object of the Date and Temperature columns. This step is necessary in order to run a Holt-Winters function.  We used the Holt-Winters triple exponential smoothing method with multiplicative seasonality. In contrast to single exponential smoothing (the base equation). The Holt-Winters  model allows us to look at seasonal variation (Ct) and trends (Tt) from July to October over a period of 20 years. 
+
+
+
+
+```{r}
+
+### libraries
+library(tidyverse)
+library(ggplot2)
+```
+
+
+```{r}
+### load data as a data frame
+tempData<-read.delim(file = "temps.txt",header = TRUE)
+tempData <- as.data.frame(tempData)
+View(tempData)
+```
+
+
+```{r}
+#### fix the headers (remove the X)
+
+colnames(tempData) <- gsub("^X", "", colnames(tempData))
+head(tempData)
+
+```
+
+We are going to reshape the data from a "wide format" to a long format , it's easier for plotting
+```{r}
+#### Reshape data
+tempDatalong <- tempData %>% pivot_longer(cols = -DAY, # grab all columns except Day
+                                          names_to = "Year", #make new column called year add headers here
+                                          values_to = "Temperature") # take all of the datapoints from the years and add to new column called Temperature
+
+
+tempDatalong$Year <- as.numeric(tempDatalong$Year)
+
+head(tempDatalong)
+```
+We are going to create new column called Date with the year, month and day [This Stack Overflow thread has code ideas for pasting new date formats](https://stackoverflow.com/questions/56328394/change-strings-with-different-format-to-dates-with-the-same-format-in-a-datafram)
+
+```{r}
+### new column with year and date pasted together
+tempDatalong <- tempDatalong %>% mutate(
+  Date = as.Date(paste(Year,DAY,sep = "-"), format= "%Y-%d-%B")
+)
+
+head(tempDatalong)
+```
+Grabbing the new Date and Temperature columns as a separate dataframe
+
+```{r}
+new_df <- tempDatalong %>% select(Date,Temperature)
+new_df <- new_df %>% arrange(Date) # key step! time series models rely on chronological order of the data
+new_df
+```
+ok now that we have our new dataframe with Date in chronological order andf Temperature values, we can make the time series object
+
+```{r}
+
+### make data into a time series (ts) object
+tempData_ts <- ts(new_df$Temperature, start=c(1996,1), frequency=123) #123 days total of datapoints
+plot(tempData_ts)
+
+```
+
+
+Using the Holt-Winters method
+
+```{r}
+### Hold-Winters exponential smoothing approach
+Model_HW_temps <- HoltWinters(tempData_ts, seasonal = "multiplicative")
+```
+
+```{r}
+### plot
+
+plot(Model_HW_temps)
+```
+
+
+Let's examine if there is a shift in trends and examine seasonal patterns in our exponential smoothing model:
+
+```{r}
+### Grab all of the components generated by the model (specifically trends and seasonality)
+Model_components <- Model_HW_temps$fitted
+head(Model_components)
+Trends <- Model_components[,3]
+seasonal_patterns <- Model_components[,4]
+
+###plot for Trends
+
+plot(Trends, type="l", col="hotpink", main="Trends in Holt-Winters Model", ylab="Trend", xlab="Time") #"l" stands for lines
+```
+The trendline (hot pink), is flat, suggesting there is not a significant increase or decrease in temperature over time. Let's double-check this.
+
+```{r}
+### Directly checking trends in our HW model
+
+summary(Trends)
+```
+
+Let's now check the seasonality 
+
+
+```{r}
+#### plot for seasonality
+plot(seasonal_patterns, type="l", col="green", main="Seasonality patterns over time using Holt-Winters", ylab="Seasonality", xlab="Time") #"l" stands for lines
+```
+There seems to be some changes in the late period peak temperatures compared to the earlier peak temperatures.
+
+The Holt-Winters model indicates that peak temperatures may have shifted to later dates over the past 20 years. No changes in trends over the years have been observed. 
+
+### Question 8.1
+Describe a situation or problem from your job, everyday life, current events, etc., for which a linear regression model would be appropriate. List some (up to 5) predictors that you might use.
+
+#### Answer
+One example from my job is understanding how the level of gene expression for a particular gene or set of genes in a cell is affected by different conditions.  Some predictors or conditions that might influence gene expression and can be tested with a linear regression model are:
+ 
+ 1.  Cell type: Different cell types might show different levels of the same gene or set of genes
+ 2.  Treatment conditions: If the cells were treated with a drug, or varyting temperatures, this particular gene or genes of interest may be affected
+ 3. Time point: The time the experimenter measures gene expression once you start the experiment. For example if the cells were treated with a drug. We can have timepoint 5 minutes or time point 1 hr after drug treatment.
+ 
+ Using a linear regression model we can determine wich factors heavily influence gene expression.
+ 
+____
+ 
+### Question 8.2
+Using crime data from http://www.statsci.org/data/general/uscrime.txt (file uscrime.txt, description at http://www.statsci.org/data/general/uscrime.html ), use regression (a useful R function is lm or glm) to predict the observed crime rate in a city with the following data:
+M = 14.0
+So = 0
+Ed = 10.0
+Po1 = 12.0 Po2 = 15.5
+LF = 0.640
+M.F = 94.0 Pop = 150
+NW = 1.1
+U1 = 0.120
+U2 = 3.6 Wealth = 3200 Ineq = 20.1 Prob = 0.04 Time = 39.0
+Show your model (factors used and their coefficients), the software output, and the quality of fit.
+Note that because there are only 47 data points and 15 predictors, you’ll probably notice some overfitting. We’ll see ways of dealing with this sort of problem later in the course.
+
+#### Answer
+
+![*Crime Data column info*](Screenshot 2024-06-03 at 9.44.30 PM.png)
+
+
+```{r}
+#### Load data and store as variable
+CrimeData <- read.table(url("http://www.statsci.org/data/general/uscrime.txt"), header = TRUE)
+head(CrimeData)
+
+```
+
+Using Homework week 2 code to refresh our knowledge on the Crime column
+
+```{r}
+# make a boxplot of the crimes data column 
+boxplot(CrimeData$Crime,
+main = "Boxplot of number of offenses per 100,000 population in 1960",
+ylab = "Crime rate",
+col = "hotpink",
+border = "black")
+
+summary(CrimeData$Crime) #stats on the top , middle and bottom values for the boxplot
+```
+
+
+```{r}
+### Build a linear regression model of the full Crime dataset
+lm_crime <- lm(Crime~., data=CrimeData)
+summary(lm_crime,cor=F)
+```
+
+Now lets create a dataframe of the new city info provided by the homework question 
+
+
+```{r}
+### new data frame with city info provided by homework question
+city_data <- data.frame(M = 14.0,So = 0, Ed = 10.0, Po1 = 12.0, Po2 = 15.5,LF = 0.640, M.F = 94.0, Pop = 150, NW = 1.1, U1 = 0.120, U2 = 3.6, Wealth = 3200, Ineq = 20.1, Prob = 0.040,Time = 39.0)
+head(city_data)
+```
+
+
+
+```{r}
+fitted_city_model <- predict(lm_crime,city_data)
+print(fitted_city_model)
+```
+
+Our linear regression model predicted a value lower than any value on the Crime dataset (check the boxplot code snippet above). This could be due to **over-fitting**. Too many predictors, specially predictors that are not significant (high p-value) could lead to the model capturing noise instead of a true relationship.
+
+Let's grab all of the predictors that have low p-values (less than 0.1)
+
+```{r}
+### Build a linear regression model removing predictors with high p-values
+lm_crime_cleaned <- lm(Crime ~ M + Ed + Ineq + Prob + U2 + Po1, data=CrimeData)
+summary(lm_crime_cleaned,cor=F)
+```
+
+
+```{r}
+fitted_city_model_cleaned <- predict(lm_crime_cleaned,city_data)
+print(fitted_city_model_cleaned)
+```
+
+It's important to mention that I originally did not include the U2 and Po1 predictors since I first used a hard cutoff of pValue = 0.05. With this hard cutoff model, with the removed high p-value predictors, resulted in a Crime value of 897.23 and the adjusted R-Squared value dropped significantly between the trained model (Adjusted R-squared:  0.7078) and the new model (Adjusted R-squared:  0.1927). Adding the U2 and Po1 predictors and evaluating this new model resulted in a Crime value of 1304. More inline with the training data. Additionally the adjusted R-Squared value increased from 0.7078  to 0.7307 when U2 and Po1 were added back. 
+
+Nevertheless,  based on Homework Week 1, creating a validation dataset and test set would also be something to consider but the dataset seems rather small to begin with. 

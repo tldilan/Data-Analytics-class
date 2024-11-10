@@ -1,0 +1,286 @@
+---
+title: "Homework Week 4"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+### Question 9.1
+Using the same crime data set uscrime.txt as in Question 8.2, apply Principal Component Analysis and then create a regression model using the first few principal components. Specify your new model in terms of the original variables (not the principal components), and compare its quality to that of your solution to Question 8.2. You can use the R function prcomp for PCA. (Note that to first scale the data, you can include scale. = TRUE to scale as part of the PCA function. Don’t forget that, to make a prediction for the new city, you’ll need to unscale the coefficients (i.e., do the scaling calculation in reverse)!)
+
+#### Answer
+
+
+```{r}
+#install.packages("factoextra")
+#install.packages("rpart")
+#install.packages("rpart.plot")
+#install.packages("tree")
+#install.packages("randomForest")
+library(dplyr)
+library(factoextra)
+library(GGally)
+library(rpart)
+library(rpart.plot)
+library(tree)
+library(randomForest)
+```
+
+
+
+```{r}
+#### Load data and store as variable
+CrimeData <- read.table(url("http://www.statsci.org/data/general/uscrime.txt"), header = TRUE)
+head(CrimeData)
+
+```
+
+```{r}
+#### Visualizing of distribution of potential clusters in the iris dataset
+pairplot <- ggpairs(CrimeData, 
+        columns = 1:6, #picked the first 6 columns for visualization
+        aes(alpha = 0.5)) #transparency 
+
+pairplot
+```
+So it seems we have some factors that are highly correlated with each other. We can use principal component analysis (PCA) to to remove the correlations and rank coordinates by importance (Sokol Lesson 9.3).
+
+Before we do a PCA we will first grab all of the predictor columns into one variable and the response column as a separate variable
+
+```{r}
+#### Make feature and response variables 
+
+predictors <- CrimeData %>% select(-16)
+
+response <- CrimeData %>% select(16)
+predictors
+response
+
+```
+
+
+Now we can generate our PCA plot for our predictors dataset. 
+
+```{r}
+#### PCA plot of predictors
+set.seed(100)
+predictors_PCA <- prcomp(predictors, scale = TRUE)
+summary(predictors_PCA)
+predictors_PCA
+```
+
+we can plot our first PC1 and PC2 component. The first PC components have the highest variance.
+```{r}
+#### PC1 abd PC2 plot
+ggplot(as.data.frame(predictors_PCA$x), aes(x = PC1, y = PC2)) +
+  geom_point() + coord_fixed() 
+```
+
+
+Lets plot our PC values (scree plot) to get an overall picture of variability among PC components.  For more code examples on Scree plots check this [site](http://www.sthda.com/english/wiki/eigenvalues-quick-data-visualization-with-factoextra-r-software-and-data-mining)
+
+```{r}
+
+fviz_eig(predictors_PCA, addlabels=TRUE, hjust = -0.3)
+```
+Cool we can see that the first 4-5 PC components have the most variance. I will be grabbing the first 5 PC's for our linear model. The first 5 PC's capture ~85% of the variance. (Office hours recommends 85-95% of the variance). We could additionally perform cross-validations to find the best n-value.
+
+```{r}
+#### Check our PCA object
+
+str(predictors_PCA)
+
+```
+our PC components are stored in $x, now lets grab the first 5
+
+```{r}
+results_PC <- as.data.frame(predictors_PCA$x[,1:5])
+```
+
+Ok now lets perform a linear regression model using the new PC's and the responses (Crime column) I saved earlier as a response data frame
+
+```{r}
+### making sure response column is numeric 
+response <- as.numeric(response[[1]]) #make sure we change the Crime column from integer to numeric 
+
+```
+
+
+```{r}
+
+#### lm model with first 5 PC's
+lm_model_PC <- lm(response ~., data = results_PC)
+summary(lm_model_PC)
+```
+
+The homework question asks us to specify our new model in terms of the original variables *(not the principal components)*. To do this we need to convert the coefficients of the PC's (from our new linear model) back to the coefficients from the original Crime data predictors.
+
+```{r}
+#### extracting the coefficients form our lm
+
+lm_coeffs <- lm_model_PC$coefficients[2:6] #grabbed our coefficients ignoring the y-intercept as a data frame 
+lm_coeff_yintercept <- lm_model_PC$coefficients[1]
+lm_coeffs #b values
+lm_coeff_yintercept # y-intercept or b0
+
+```
+
+
+```{r}
+#### Grabbing some components from the first 5 PC's in the PCA object that we will need for our back-calculations
+
+PCA_rotation <- predictors_PCA$rotation[,1:5] #eigenvectors for the first 5 PC's
+PCA_scale <- predictors_PCA$scale #scaling factors 
+PCA_center <- predictors_PCA$center #means of original values
+predictors_PCA_PC <- predictors_PCA$x[,1:5] #first 5 PC's
+
+
+PCA_rotation
+predictors_PCA_PC
+
+```
+
+Grabbing the eigenvectors for the first 5 PC's from our PCA model
+
+```{r}
+#### eigenvectors values from PCA model transposed
+PCA_rotation_transpose <- t(PCA_rotation) 
+PCA_rotation_transpose
+```
+Ok now both our linear model coefficients of the principal components  and our PCA rotation coefficients (eigenvectors) are in the same matrix format ([1X5] * [5X15]) we can now multiply them and this will transform back the coefficients to the original variable.This is called performing an Inverse Transformation (Sokol Lesson 9.4). This [Stack Exchange thread goes into more detail on reversing PCA variables back to their original dimensions](https://stats.stackexchange.com/questions/34724/reversing-pca-back-to-the-original-variables)
+
+
+```{r}
+transformed_coefficients <- PCA_rotation_transpose*lm_coeffs #a value
+transformed_coefficients
+
+```
+Ok we have the original coefficients :)  The prcomp() function in R centers and scales the data, so we need to de-center it and un-scale it.
+To do this we need the mean and standard deviation (from our original Crimes Data set) which was used in the original PCA model.
+
+
+```{r}
+#### reversing the scaling and centering prcomp() did using mean and sd
+
+
+mu <- colMeans(CrimeData[ , 1:15]) #mean from each column except the response column from the original dataset
+sd <- apply(CrimeData[,1:15], 2,sd) #standard deviation from each column except the response column from the original dataset
+
+unscaled_transformed_coefficients <- transformed_coefficients / sd #reverses the scaling process
+
+
+y_intercept <- as.numeric(lm_coeff_yintercept - sum((mu / sd) * transformed_coefficients)) # adjusting the centered y-intercept 
+y_intercept
+unscaled_transformed_coefficients <- as.data.frame(unscaled_transformed_coefficients)
+unscaled_transformed_coefficients
+
+
+```
+
+
+Now lets grab the de-centered y-intercept and the un-scaled coefficients to get a prediction using the new city data from last week's homework 
+
+```{r}
+### new data frame with city info provided by last week's homework question
+city_data <- data.frame(M = 14.0,So = 0, Ed = 10.0, Po1 = 12.0, Po2 = 15.5,LF = 0.640, M.F = 94.0, Pop = 150, NW = 1.1, U1 = 0.120, U2 = 3.6, Wealth = 3200, Ineq = 20.1, Prob = 0.040,Time = 39.0)
+city_data <- as.matrix(city_data)
+city_data
+
+
+```
+
+
+```{r}
+#### predicted value for new city using un-scaled coefficients and un-centered y-intercept
+predicted_city <- sum(city_data * unscaled_transformed_coefficients) + y_intercept
+predicted_city
+```
+
+Our predicted value is 2108.92. My previous predicted value from Homework 3 was 1304. 
+
+
+
+#### Question 10.1
+Using the same crime data set uscrime.txt as in Questions 8.2 and 9.1, find the best model you can
+using
+(a) a regression tree model, and
+(b) a random forest model. InR,youcanusethetreepackageortherpartpackage,andtherandomForestpackage. For each model, describe one or two qualitative takeaways you get from analyzing the results (i.e., don’t just stop when you have a good model, but interpret it too).
+
+#### Answer
+
+### 10.1.a
+
+```{r}
+
+#### build regression tree model 
+tree_model <- tree(Crime ~., data = CrimeData)
+summary(tree_model)
+```
+```{r}
+
+#### plot our regression tree
+plot(tree_model)
+text(tree_model)
+tree_model$frame
+tree_model$where
+```
+
+The model split the data based on the Po1, Pop and NW variables. 
+
+Lets compute the R^2
+
+```{r}
+#### R^2
+yhat_tree <- predict(tree_model)
+plot(yhat_tree, CrimeData$Crime)
+```
+
+```{r}
+prune.tree(tree_model)$size
+prune.tree(tree_model)$dev
+set.seed(100)
+cv.tree(tree_model)$dev
+```
+
+pruning tree branches 
+
+```{r}
+tree_prune <- prune.tree(tree_model, best = 7)
+plot(tree_prune)
+text(tree_prune)
+```
+
+### 10.1.b
+
+```{r}
+#### random forest model of Crime dataset
+randomForest_combined <- data.frame(response, predictors) # response and predictors are variables from the Crime dataset I made for question 9.1
+
+set.seed(100) #reproducibility 
+randomForest_model <- randomForest(response~., data = randomForest_combined, importance = TRUE)
+summary(randomForest_model)
+varImpPlot(randomForest_model) #plot
+```
+
+Both random forest model and our regression tree model both picked Po1, Po2 and NW as the variables with the highest importance in making predictions for response variables. (i.E: these three variables seem to be important predictors for the Crime data)
+
+
+
+#### Question 10.2
+Describe a situation or problem from your job, everyday life, current events, etc., for which a logistic regression model would be appropriate. List some (up to 5) predictors that you might use.
+
+#### Answer 
+A situation in my job (laboratory) that benefits from a logistic regression model is predicting if a compound will be effective in binding to a target protein.
+
+This is a binary outcome (yes/no)
+
+Some useful predictors:
+1. Concentration of the compound
+2. Affinity of binding
+3. % of cells that are viable (this could indicate toxicity effects from the compound)
+
+a logistic regression model could help determine the probability that the compound is effective.

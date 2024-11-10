@@ -1,0 +1,443 @@
+---
+title: "Homework_Week_2"
+output:
+  html_document:
+    df_print: paged
+---
+Question 4.1
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a clustering model would be appropriate. List some (up to 5) predictors that you might use.
+
+One example is cellular clustering cells based on identity. We can cluster cells in blood samples based on size and morphology or granularity (complexity). Machines used to sort cells (Fluorescence activated cell sorters). Can cluster cells based on size, shape and fluorescence of certain biomarkers.
+
+Predictors:
+1.Size
+2.Shape
+3.fluorescence  
+
+
+
+Question 4.2
+
+The iris data set iris.txt contains 150 data points, each with four predictor variables and one categorical response. The predictors are the width and length of the sepal and petal of flowers and the response is the type of flower. The data is available from the R library datasets and can be accessed with iris once the library is loaded. It is also available at the UCI Machine Learning Repository (https://archive.ics.uci.edu/ml/datasets/Iris ). The response values are only given to see how well a specific method performed and should not be used to build the model.
+
+Use the R function kmeans to cluster the points as well as possible. Report the best combination of predictors, your suggested value of k, and how well your best clustering predicts flower type.
+
+#### Answer
+To get the best predictors we can do some exploratory data analysis. This blog [For more info check this site](https://www.geeksforgeeks.org/exploratory-data-analysis-on-iris-dataset/) gives examples of data exploration of the iris dataset in python. I picked pairplot to look at all of the relationships between the features using the GGally library in R. 
+
+```{r}
+#install.packages("outliers")
+#install.packages("GGally")
+#install.packages("qcc")
+
+#### Load iris dataset as df and load R libraries 
+library(GGally)
+library(ggplot2)
+library(datasets)
+library(ggplot2)
+library(dplyr)
+library(outliers)
+library(tidyr)
+library(qcc)
+
+
+df <- iris
+summary(df)
+head(df)
+```
+The ggpairs function can be used to make a pairplot of the iris dataset. In this case I used color to visualize the species (response column) of flowers for each predictor (sepal and petal width and length).
+
+```{r}
+#### Visualizing of distribution of potential clusters in the iris dataset
+pairplot <- ggpairs(df, 
+        columns = 1:4, 
+        aes(color = Species, alpha = 0.5)) #transparency 
+
+pairplot
+
+
+   
+
+```
+
+The diagonal boxes gives us the frequency distribution for each predictor column for each plant type, the upper boxes gives us the correlation coefficient and the bottom boxes gives us the scatterplots comparing predictors against each other for each plant type.
+
+Based on the pairplot we can see really good clustering with very little overlap with Petal width vs Petal length also for Sepal Width vs Sepal length. The scatterplots suggest the Petal to be a good feature for clustering. We can also see the Setosa plants to be very well isolated into their own cluster. For k-means clustering we can try our k model and then visualize both the sepal width vs sepal length and compare with petal width vs petal length.
+
+---------
+To determine the best k, we will use the Elbow Method (Sokol lesson 4.4). In this case we will use a loop to test different k-means clustering for a range of k-values(in this case 1:20). K-means clustering is sensitive to initial selections of cluster centers (centroid). So we can run the model multiple times, (in this case 20 configurations i.e.nstart parameter in the kmeans fucntion), to randomly assign different cluster centers and that way we can grab the lowest within-cluster sum of squares (WSS) for each k value. The WSS is basically the sum of the squared distances between each data point in a cluster to it's cluster center (centroid). Lastly we can plot the k range against the within-cluster sum of squares (WSS) for each k value to visually see the ideal k value.
+
+Before we determine the best k, we are going to scale the data for all of the 4 predictor variables excluding the response (in this case the species column)
+
+```{r}
+df_scaled <- scale(df[,1:4]) #Week 1 cl;ass lectures information rolled over to week 2
+```
+
+
+```{r}
+
+#### Determining the best K using the "Elbow Method"
+set.seed(1) #for reproducibility
+
+WSS <- numeric() # results for WSS for each K stored here as a numeric value
+k_values <- 1:10
+
+for (k in k_values) {
+  kmeans_model_iris <- kmeans(df_scaled, centers = k, nstart=20)
+  WSS[k] <- kmeans_model_iris$tot.withinss #calculates WSS for k value tested
+}
+plot(k_values, WSS,       #plot k values against WSS
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares (WSS)")
+```
+
+```{r}
+print(paste("k value is:",k_values, "WSS is", WSS))
+```
+
+Based on the # of clusters vs WSS plot we can start to see that from k4 on-wards we get lower WSS values or the "marginal benefit of adding a cluster starts to be small" --Sokol lesson 4.4. 
+
+```{r}
+
+#### K-means clustering model with k= 3
+set.seed(1)
+  kmeans_model_final <- kmeans(df_scaled, centers = 3, nstart=20)
+kmeans_model_final 
+```
+
+
+```{r}
+#### Check out our models clusters
+
+kmeans_model_final$cluster
+```
+```{r}
+#### Check the models cluster centers (centroid)
+
+kmeans_model_final$centers
+```
+
+```{r}
+####Confusion matrix as an overview for how well the k-means algo clustered the data
+
+print(table(iris$Species,kmeans_model_final$cluster))
+```
+Rows = species labels (Setosa, Versicolor, Virginica)
+columns = clusters assigned by the k-means algo (Cluster #1, Cluster #2, Cluster #3)
+
+Based on the confusion matrix All 50 datapoints for Setosa were correctly clustered into cluster #3.
+For Versicolor there was a split between cluster #1 and cluster #2. Same with virginica. 
+
+The k-means algo was very effective at clustering the setosa species of plant but not so much with verisolor and virginica. This means setosa is very distinct from the other species of plants mentioned at least using these particular predictors. 
+
+Below is a plot to better visualize our clusters using Petal Width vs Petal length
+
+```{r}
+#### create new column called cluster in the original df dataset with out k-means cluster results
+data_combinedClusters <- df %>% mutate(cluster = as.factor(kmeans_model_final$cluster)) #mutate function from dplyr 
+
+
+head(data_combinedClusters)
+
+P <- ggplot(data_combinedClusters, aes(x = Petal.Length, y = Petal.Width, color = cluster)) +
+  geom_point()
+
+P
+```
+Below is a plot to better visualize our clusters using Sepal Width vs Sepal length
+
+```{r}
+P <- ggplot(data_combinedClusters, aes(x = Sepal.Length, y = Sepal.Width, color = cluster)) +
+  geom_point()
+
+P
+```
+
+Question 5.1
+Using crime data from the file uscrime.txt (http://www.statsci.org/data/general/uscrime.txt, description at http://www.statsci.org/data/general/uscrime.html), test to see whether there are any outliers in the last column (number of crimes per 100,000 people). Use the grubbs.test function in the outliers package in R.
+
+#### Answer
+
+The Grubbs test is based on a normal distribution of the data (Gaussian distribution) so first we have to check if our data is normally distributed. First I plotted the data as a frequency distribution. We can already tell there is a skewness to the data (asymmetry). The right tail is longer so it seems the data is positively skewed  [For more info check this site here](https://learningstatisticswithr.com/book/descriptives.html#skewandkurtosis). 
+
+To really confirm that our data is not normally distributed we will do a Shapiro-wilk Test.  [More info here](https://www.r-bloggers.com/2023/05/checking-normality-in-r/). If the p-value is less than 0.5 then the data is not normally distributed. Our results were W = 0.91273, p-value = 0.001882. Confirming that indeed the Crime datapoints are not normally distributed. 
+
+
+```{r}
+#### Load data and store as variable
+CrimeData <- read.table(url("http://www.statsci.org/data/general/uscrime.txt"), header = TRUE)
+
+
+#### Checking normality of the Crime column datapoints
+hist(CrimeData$Crime) #histogram
+shapiro.test(CrimeData$Crime) 
+
+```
+In order to still perform the Grubbs test we could:
+
+1.  Log-transformed the Crime datapoints to make it "more normally distributed".
+2.  Re-test normality with the Shapiro test, in this case we got a p value higher than 0.5 when log-transforming, and our histogram has a more Gaussian distribution now. 
+3.  Finally perform the Grubbs test. 
+
+Based on the high p value for the Grubbs test , p-value = 0.6329, the test is telling us that our most 'extreme' value (G = 2.16544) is most likely not an outlier. The problem with this result is that log-transforming the data can compress the data and "hide" outliers more easily. [More info here](https://www.toolify.ai/ai-news/transform-outliers-and-skewed-data-with-log-transformation-1564967)
+
+
+```{r}
+
+#### Make new column with Log-transformed crime datapoint values
+
+CrimeData$LogCrime <- log(CrimeData$Crime)
+
+#### Re-checking normality of the log-transformed Crime datapoints
+hist(CrimeData$LogCrime) #histogram
+shapiro.test(CrimeData$LogCrime) 
+
+#### Grubbs test on log-transformed data
+grubbs.test(CrimeData$LogCrime)
+
+```
+In other words, we could be missing the outliers. We could perform another test to detect outliers that doesn't assume the data is normally distributed. We can do a whisker plot (boxplot) of the crime datapoints to see if we can visualize/detect point outliers (Sokol Lesson 5.2). This method can detect outliers that fall outside of a reasonable range We do see 3 potential outliers.
+
+
+
+```{r}
+# make a boxplot of the crimes data column 
+boxplot(CrimeData$Crime,
+main = "Boxplot of umber of offenses per 100,000 population in 1960",
+ylab = "Crime rate",
+col = "blue",
+border = "black")
+
+summary(CrimeData$Crime) #stats on the top , middle and bottom values for the boxplot
+```
+
+Question 6.1
+
+Describe a situation or problem from your job, everyday life, current events, etc., for which a Change
+Detection model would be appropriate. Applying the CUSUM technique, how would you choose the
+critical value and the threshold?
+
+A biologist is determining the pH level of cell media for growing cell cultures they can detect changes in cell media as a quality index:
+
+Predictors:
+
+low pH (acidic)
+medium pH (neutral)
+high pH (basic)
+
+If there is a deviation from neutral CUSUM can proved insights to the changes. 
+
+
+Question 6.2
+1. Using July through October daily-high-temperature data for Atlanta for 1996 through 2015, use a CUSUM approach to identify when unofficial summer ends (i.e., when the weather starts cooling off) each year. You can get the data that you need from the file temps.txt or online, for example at http://www.iweathernet.com/atlanta-weather-records or https://www.wunderground.com/history/airport/KFTY/2015/7/1/CustomHistory.html . You can use R if you’d like, but it’s straightforward enough that an Excel spreadsheet can easily do the job too.
+
+```{r}
+tempData<-read.delim(file = "Homework_Week_2_files/temps.txt",header = TRUE)
+tempData <- as.data.frame(tempData)
+View(tempData)
+```
+
+
+```{r}
+#### fix the headers (remove the X)
+
+colnames(tempData) <- gsub("^X", "", colnames(tempData))
+head(tempData)
+```
+
+
+We are going to reshape the data from a "wide format" to a long format , it's easier for plotting
+```{r}
+#### Reshape data
+tempDatalong <- tempData %>% pivot_longer(cols = -DAY, # grab all columns except Day
+                                          names_to = "Year", #make new column called year add headers here
+                                          values_to = "Temperature") # take all of the datapoints from the years and add to new column called temp
+
+head(tempDatalong)
+```
+
+```{r}
+#### Exploratory boxplot to look at the median temperature across the years and outliers
+
+ggplot(tempDatalong, aes(x = Year, y = Temperature)) +
+       geom_boxplot()
+```
+Summary:
+
+Outliers were observed in the lower temperatures. Temperature medians stayed between 80-90 degree throughout the years.
+
+Now we want to look at the average temperature over the years.
+We can calculate the mean temp per year and obtain the standard deviation using group_by (dplyr package) and then plot it. [Stack overflow example](https://stackoverflow.com/questions/46661461/calculate-mean-by-group-using-dplyr-package)
+
+```{r}
+#### Get the average daily temp 
+
+
+Average_daily_Temperature <- tempDatalong %>% group_by(DAY) %>% summarise(Average_Temperature = mean(Temperature))
+head(Average_daily_Temperature)
+
+
+
+Average_daily_Temperature$DAY <- as.Date(Average_daily_Temperature$DAY, format = "%d-%b") #make sure the Day column is the right data type (or else it will not to plot!)
+
+
+
+print(head(Average_daily_Temperature))
+
+
+
+
+
+
+```
+```{r}
+#### Plot our yearly average temperature !
+
+ggplot(Average_daily_Temperature, aes(x = DAY, y = Average_Temperature, group = 1)) + #"group = 1" all points are 1 group
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Daily average temperature in Atlanta from 1995-2015",
+       y = "Average Temperature")
+```
+Months July to August seem to be the highest temperature with a dip in September. The month of july is also fairly stable, this will come in handy for using this month as a baseline for CUSUM. 
+
+____
+###Using the CUSUM approach to detect changes in yearly average temperatures
+
+The CUSUM approach accumulates the changes between individual datapoints and a target value (mean) over time.
+For each point in a time series dataset, the deviation from the mean is calculated.  If this deviation is positive 
+ it is added to the CUSUM sum; If the deviation is negative , it resets to zero.
+ 
+ Mathematically, for our particular data , we can look at the CUSUM approach in this way:
+ 
+1. Average_daily_Temperature = average daily temperature for all years in the Atlanta dataset 
+2. july_mean = Total Mean or average of the baseline temperature (month of july, this was obtained from the plot above)
+3. T = Threshold 
+4. C = (sometimes called k), 'slack', its a parameter that helps adjust the sensitivity of the model- I kept it low to be more "sensitive"
+
+taken together, the CUSUM formula should look like this
+
+CUSUM[t] = max( 0,CUSUM[t] - 1 + ( Average_daily_Temperature[t] - july_mean - (C + T) )
+
+We can create a loop that uses the CUSUM formula to go over daily temperatures across the years to determine deviations from the average and obtain a CUSUM value. For our temperature dataset, high CUSUM values can mean higher than average temperatures. If the CUSUM values go back to zero often, this can mean the temperature are staying stable throughout the years.
+ 
+ 
+Before doing the loop lets first grab the july temperatures to calculate the average temperature for the month of July throughout the years
+```{r}
+#### filter the data for July months 
+july_baseline <- Average_daily_Temperature %>%  filter(format(DAY,"%b")=="Jul")
+
+#### Get the average temperature for the july month
+
+july_mean <- mean(july_baseline$Average_Temperature)
+print(july_mean)
+
+
+
+```
+
+88.75 is our average temperature for July.
+
+Create a loop testing CUSUM: In this case I manually changed the C and T values (brute force), choosing C and T values was not simple. Based on the plot above I kept the values conservative. 
+```{r}
+
+#### Parameter setting
+
+C <- 1
+T<- .5
+
+#variables for storage
+
+Cusum_values <- numeric(nrow(Average_daily_Temperature))
+
+
+#### CUSUM loop through each year (i)
+
+for (i in 2:nrow(Average_daily_Temperature)){
+  
+  Cusum_values[i] <- max(0, Cusum_values[i-1] + ( Average_daily_Temperature$Average_Temperature[i] - july_mean - (C + T) ) )
+
+  
+}
+
+
+```
+Ok now we will save the values and plot them to visually insect the data
+
+```{r}
+  Average_daily_Temperature$CusumValues <- Cusum_values
+print(Average_daily_Temperature)
+
+
+
+```
+
+```{r}
+ggplot(Average_daily_Temperature, aes(x = DAY, y= CusumValues)) +
+         geom_line()+
+         geom_point() +
+         theme_minimal() +
+  labs(x = "Day", y = "CUSUM Value", title = " CUSUM value for Atlanta's average Daily temperatures")
+       
+```
+The CUSUM method is showing us that August 19 is when the summer unofficially ends
+
+2. Use a CUSUM approach to make a judgment of whether Atlanta’s summer climate has gotten warmer in that time (and if so, when).
+
+Before doing the loop lets first grab the August temperatures to calculate the average temperature for the month of August throughout the years
+```{r}
+#### filter the data for July months 
+august_baseline <- Average_daily_Temperature %>%  filter(format(DAY,"%b") =="Aug")
+
+#### Get the average temperature for the july month
+
+august_mean <- mean(august_baseline$Average_Temperature)
+print(august_mean)
+
+
+
+```
+
+
+```{r}
+
+#### Parameter setting
+
+C <- 1
+T<- .5
+
+#variables for storage
+
+Cusum_values_aug <- numeric(nrow(august_baseline))
+
+
+#### CUSUM loop through each year (i)
+
+for (i in 2:nrow(august_baseline)){
+  
+  Cusum_values_aug[i] <- max(0, Cusum_values_aug[i-1] + ( august_baseline$Average_Temperature[i] - august_mean - (C + T) ) )
+}
+```
+
+
+Ok now we will save the values and plot them to visually inspect the data
+
+```{r}
+august_baseline$CusumValues_aug <- Cusum_values_aug
+print(august_baseline)
+
+
+
+```
+
+```{r}
+ggplot(august_baseline, aes(x = DAY, y= CusumValues_aug)) +
+         geom_line()+
+         geom_point() +
+         theme_minimal() +
+  labs(x = "Day", y = "CUSUM Value", title = " CUSUM value for August temperatures")
+       
+```
